@@ -1,0 +1,322 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Fraud Desk Script</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+  /* Layout: a quiet, theme-aware page that frames one fixed-color object, the
+     script panel, exactly as Script Designer would paint it. Controls and the
+     live participant-data readout sit beside it. */
+  :root {
+    --bg: #EEF0F5; --surface: #FFFFFF; --fg: #131A2B; --muted: #596275;
+    --line: #D5D9E3; --accent: #2447D8; --accent-fg: #FFFFFF; --code-bg: #E4E7EF;
+    --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0D1220; --surface: #171E30; --fg: #E8EBF3; --muted: #9AA3B8;
+      --line: #2B3449; --accent: #8FA6FF; --accent-fg: #0D1220; --code-bg: #222B40;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0D1220; --surface: #171E30; --fg: #E8EBF3; --muted: #9AA3B8;
+    --line: #2B3449; --accent: #8FA6FF; --accent-fg: #0D1220; --code-bg: #222B40;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding-block: 28px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .intro h1 { font-family: var(--font-display); font-size: 26px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; text-wrap: balance; }
+  .intro p { margin: 0; color: var(--muted); max-width: 68ch; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; margin-top: 22px; align-items: start; }
+  @media (max-width: 1080px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .frame { border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+  .frame-bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line);
+    font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .frame-bar strong { color: var(--fg); font-weight: 600; }
+  .frame-bar .spacer { flex: 1; }
+  .pagejump { font: inherit; font-size: 12px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); padding: 3px 6px; border-radius: 4px; }
+
+  aside { display: grid; gap: 16px; min-width: 0; }
+  .box { background: var(--surface); border: 1px solid var(--line); padding: 16px; }
+  .box h2 { font-family: var(--font-display); font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .box p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .ctl { display: grid; gap: 4px; margin-bottom: 10px; }
+  .ctl label { font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+  .ctl select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--fg); width: 100%; }
+  .ghost { font: inherit; font-weight: 600; padding: 7px 12px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--fg); cursor: pointer; }
+  .ghost:hover { border-color: var(--accent); color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  table.pd { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.pd td { padding: 5px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  table.pd td:first-child { font-family: var(--font-mono); color: var(--muted); padding-right: 8px; }
+  table.pd td:last-child { text-align: right; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .log { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 170px; overflow: auto; }
+  .log li:first-child { color: var(--fg); }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 18px; max-width: 80ch; }
+
+  /* ---- The script panel. Colors are fixed: they are the script's own. ---- */
+  .gs { color-scheme: light; background: #F3F5F9; font-family: "Inter", Arial, Helvetica, sans-serif; color: #131A2B; font-size: 14px; line-height: 1.45; }
+  .gs .vstack { display: flex; flex-direction: column; min-width: 0; }
+  .gs .hstack { display: flex; flex-direction: row; min-width: 0; }
+  .gs .hstack.gap { gap: 10px; }
+  .gs .hstack.wraps { flex-wrap: wrap; }
+  .gs .hstack.center { align-items: center; }
+  .gs .s-body > .vstack { min-width: 0; }
+  .gs .s-footer { justify-content: flex-end; flex-wrap: wrap; }
+  .gs .s-stepper { flex-wrap: wrap; }
+  .gs .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .gs .chip { align-self: flex-start; white-space: nowrap; }
+  .gs .md { font-size: 14px; overflow-wrap: anywhere; }
+  .gs .md p { margin: 0 0 6px; } .gs .md p:last-child { margin-bottom: 0; }
+  .gs .md ul { margin: 0 0 6px; padding-left: 18px; } .gs .md li { margin-bottom: 4px; }
+  .gs .md.boxed { background: #F3F5F9; padding: 12px; margin-top: 12px; font-size: 13px; }
+  .gs .btn { font: inherit; border: 0; border-radius: 4px; padding: 9px 16px; cursor: pointer; align-self: flex-start; white-space: nowrap; }
+  .gs .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .gs .btn:hover:not(:disabled) { filter: brightness(0.94); }
+  .gs .btn:focus-visible, .gs input:focus-visible, .gs select:focus-visible, .gs textarea:focus-visible { outline: 2px solid #2447D8; outline-offset: 2px; }
+  .gs input[type="text"], .gs input[type="number"], .gs input[type="date"], .gs select, .gs textarea {
+    font: inherit; color: #131A2B; background: #FFFFFF; border: 1px solid #B9C0CF; border-radius: 4px; padding: 8px 10px; width: 100%; margin-top: 4px; }
+  .gs textarea { min-height: 76px; resize: vertical; }
+  .gs .opt { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
+  .gs .opt input { margin: 3px 0 0; accent-color: #2447D8; width: 16px; height: 16px; flex: none; }
+  .gs .radios.inline { display: flex; gap: 18px; flex-wrap: wrap; }
+  .gs .alert { margin: 0 20px 20px; padding: 14px 16px; background: #131A2B; color: #FFFFFF; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .gs .alert span { flex: 1; min-width: 200px; }
+  .gs .alert button { font: inherit; background: #FFFFFF; color: #131A2B; border: 0; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
+  @media (max-width: 760px) {
+    .gs .s-body { flex-direction: column; }
+    .gs .s-main { margin-right: 0 !important; }
+    .gs .twoup { flex-direction: column; gap: 0; }
+    .gs .s-header { flex-direction: column; gap: 6px; }
+    .gs .s-header .txt { text-align: left !important; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="intro">
+    <h1>Fraud Desk Script</h1>
+    <p>A working preview of the inbound fraud script, drawn only with what Script Designer provides: stack containers, text, Markdown, inputs, buttons and background colors. Click through it as an agent would.</p>
+  </div>
+
+  <div class="layout">
+    <div class="frame">
+      <div class="frame-bar">
+        <strong>Script</strong><span id="pageName"></span>
+        <span class="spacer"></span>
+        <label for="pagejump">Jump to page</label>
+        <select id="pagejump" class="pagejump"></select>
+      </div>
+      <div id="script" class="gs"></div>
+    </div>
+
+    <aside>
+      <div class="box">
+        <h2>What the call flow passes in</h2>
+        <p>These arrive from Architect as input variables. Change them to see the script adapt.</p>
+        <div class="ctl"><label for="simVerified">IVR verification</label>
+          <select id="simVerified"><option value="none">Not verified</option><option value="partial">Partly verified</option><option value="full">Fully verified</option></select></div>
+        <div class="ctl"><label for="simIntent">Reason chosen in the IVR</label>
+          <select id="simIntent"><option value="">None</option><option value="card">Card payments</option><option value="scam">Scam</option><option value="lost">Lost or stolen</option></select></div>
+        <button class="ghost" id="reset" type="button">Start a new call</button>
+      </div>
+      <div class="box">
+        <h2>Participant data written</h2>
+        <p>Output variables saved on the conversation for reporting and routing.</p>
+        <table class="pd" id="pd"></table>
+      </div>
+      <div class="box">
+        <h2>Actions fired</h2>
+        <p>Data actions are simulated here. In Genesys they call your banking systems.</p>
+        <ul class="log" id="log"><li>Nothing yet</li></ul>
+      </div>
+    </aside>
+  </div>
+  <p class="note">The customer, bank name, reference and time frames are examples. Square corners and flat color blocks are deliberate: they are what the native components can draw. Layout stacks to one column on a narrow screen here; in Genesys the two columns keep their proportions.</p>
+</div>
+
+<script>
+const DEF = /*__DEF__*/null;
+
+const varMap = Object.fromEntries(DEF.variables.map(v => [v.name, v]));
+const pageMap = Object.fromEntries(DEF.pages.map(p => [p.id, p]));
+const caMap = Object.fromEntries(DEF.customActions.map(a => [a.name, a]));
+const builtins = { ...DEF.meta.previewBuiltins };
+let state = {}, current = DEF.meta.startPage, updaters = [], alertText = '', started = Date.now(), log = [];
+
+function resetState() {
+  state = {};
+  for (const v of DEF.variables) if (v.kind !== 'Dynamic') state[v.name] = v.preview !== undefined ? v.preview : v.default;
+  state.in_VerifiedLevel = document.getElementById('simVerified').value;
+  state.in_IvrIntent = document.getElementById('simIntent').value;
+  started = Date.now(); log = []; alertText = '';
+}
+
+// ---- Genesys expression -> JS -------------------------------------------
+const cache = new Map();
+function compile(expr) {
+  if (!cache.has(expr)) {
+    const js = expr.replace(/"(?:[^"\\]|\\.)*"|\{\{([^}]+)\}\}|\band\b|\bor\b|\bnot\b/g, (m, name) => {
+      if (name) return 'V(' + JSON.stringify(name.trim()) + ')';
+      if (m === 'and') return '&&'; if (m === 'or') return '||'; if (m === 'not') return '!';
+      return m;
+    });
+    cache.set(expr, new Function('V', 'equal', 'ifElse', 'return (' + js + ');'));
+  }
+  return cache.get(expr);
+}
+const equal = (a, b) => a === b;
+const ifElse = (c, a, b) => (c ? a : b);
+function V(name) {
+  if (name in builtins) return builtins[name];
+  const v = varMap[name];
+  if (!v) return '';
+  return v.kind === 'Dynamic' ? evalExpr(v.expr) : state[name];
+}
+function evalExpr(expr) { return compile(expr)(V, equal, ifElse); }
+function interp(t) { return String(t).replace(/\{\{([^}]+)\}\}/g, (_, n) => { const x = V(n.trim()); return x === undefined || x === null ? '' : String(x); }); }
+
+// ---- Actions --------------------------------------------------------------
+function note(msg) { log.unshift(msg); log = log.slice(0, 12); }
+function runSteps(steps) {
+  for (const s of steps) {
+    const [op, a, b, c] = s;
+    if (op === 'set') state[a] = (b && typeof b === 'object') ? evalExpr(b.x) : b;
+    else if (op === 'page') { current = a; alertText = ''; }
+    else if (op === 'run') runSteps(caMap[a].steps);
+    else if (op === 'if') runSteps(evalExpr(a) ? b : c);
+    else if (op === 'alert') alertText = interp(a);
+    else if (op === 'data') { Object.assign(state, b); note('Data action: ' + a); }
+    else if (op === 'copy') { const t = interp(a); note('Copied notes to clipboard'); if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {}); }
+    else if (op === 'transfer') { note('Blind transfer to queue: ' + a); alertText = 'Transferring to the ' + a + ' queue.'; }
+    else if (op === 'securePause') { note('Secure Pause'); alertText = 'Recording paused.'; }
+    else if (op === 'endSecurePause') { note('End Secure Pause'); alertText = 'Recording resumed.'; }
+  }
+}
+function click(steps) { const before = current; runSteps(steps); if (current !== before) { render(); window.scrollTo({ top: 0 }); } else refresh(); }
+
+// ---- Rendering ------------------------------------------------------------
+const px = (s) => String(s).split(' ').map(n => n + 'px').join(' ');
+function applyStyle(el, name) {
+  const st = DEF.styles[name]; if (!st) return;
+  el.classList.add('s-' + name);
+  if (st.bg) el.style.background = st.bg;
+  if (st.color) el.style.color = st.color;
+  if (st.size) el.style.fontSize = st.size + 'px';
+  if (st.bold) el.style.fontWeight = '600';
+  if (st.pad) el.style.padding = px(st.pad);
+  if (st.margin) el.style.margin = px(st.margin);
+  if (st.width && st.width.includes('weight')) { el.style.flex = st.width.match(/\d+/)[0] + ' 1 0'; }
+}
+function mdToHtml(src) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  let html = '', list = false;
+  for (const line of src.split('\n')) {
+    if (line.startsWith('- ')) { if (!list) { html += '<ul>'; list = true; } html += '<li>' + inline(line.slice(2)) + '</li>'; continue; }
+    if (list) { html += '</ul>'; list = false; }
+    if (line.trim()) html += '<p>' + inline(line) + '</p>';
+  }
+  return html + (list ? '</ul>' : '');
+}
+let uid = 0;
+function build(n) {
+  let el;
+  const E = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+  if (n.t === 'vstack' || n.t === 'hstack') {
+    el = E('div', n.t);
+    if (n.gap) el.classList.add('gap'); if (n.wrap) el.classList.add('wraps'); if (n.valign) el.classList.add('center');
+    if (n.t === 'hstack' && n.kids.length === 2 && n.kids.every(k => k.w === 1) && n.s === 'row') el.classList.add('twoup');
+    for (const k of n.kids) el.appendChild(build(k));
+  } else if (n.t === 'text') {
+    el = E('div', 'txt');
+    if (n.align) el.style.textAlign = n.align;
+    updaters.push(() => { el.textContent = interp(n.text); });
+  } else if (n.t === 'chip') {
+    el = E('div', 'chip txt');
+    updaters.push(() => { el.textContent = interp(n.text); });
+  } else if (n.t === 'markdown') {
+    el = E('div', 'md' + (n.box ? ' boxed' : ''));
+    updaters.push(() => { el.innerHTML = mdToHtml(interp(n.text)); });
+  } else if (n.t === 'button') {
+    el = E('button', 'btn'); el.type = 'button';
+    el.addEventListener('click', () => click(n.click));
+    updaters.push(() => { el.textContent = interp(n.text); if (n.disVar) el.disabled = !!V(n.disVar); });
+  } else if (n.t === 'input' || n.t === 'number' || n.t === 'date') {
+    el = n.multi ? E('textarea') : E('input');
+    if (!n.multi) el.type = n.t === 'input' ? 'text' : n.t;
+    el.id = 'f-' + current + '-' + n.var; if (n.ph) el.placeholder = n.ph;
+    el.setAttribute('aria-label', n.var);
+    el.value = n.t === 'number' && !state[n.var] ? '' : state[n.var];
+    el.addEventListener('input', () => { state[n.var] = n.t === 'number' ? (parseInt(el.value, 10) || 0) : el.value; refresh(); });
+  } else if (n.t === 'checkbox') {
+    el = E('label', 'opt'); const box = E('input'); box.type = 'checkbox'; box.id = 'f-' + current + '-' + n.var;
+    const span = E('span'); span.textContent = n.text; el.append(box, span);
+    box.addEventListener('change', () => { state[n.var] = box.checked; refresh(); });
+    updaters.push(() => { box.checked = !!state[n.var]; });
+  } else if (n.t === 'radio') {
+    el = E('div', 'radios' + (n.opts.every(o => o[1].length < 12) ? ' inline' : ''));
+    const group = 'r' + (uid++);
+    const boxes = n.opts.map(([val, label]) => {
+      const l = E('label', 'opt'), r = E('input'), s = E('span');
+      r.type = 'radio'; r.name = group; r.id = 'f-' + current + '-' + n.var + '-' + val; s.textContent = label; l.append(r, s); el.appendChild(l);
+      r.addEventListener('change', () => { state[n.var] = val; refresh(); });
+      return [r, val];
+    });
+    updaters.push(() => { for (const [r, val] of boxes) r.checked = state[n.var] === val; });
+  } else if (n.t === 'dropdown') {
+    el = E('select'); el.id = 'f-' + current + '-' + n.var; el.setAttribute('aria-label', n.var);
+    el.appendChild(new Option('Select', ''));
+    for (const [val, label] of n.opts) el.appendChild(new Option(label, val));
+    el.addEventListener('change', () => { state[n.var] = el.value; refresh(); });
+    updaters.push(() => { el.value = state[n.var]; });
+  }
+  if (n.s) applyStyle(el, n.s);
+  if (n.inherit) { const st = DEF.styles[n.inherit]; el.style.color = st.color; el.style.fontSize = st.size + 'px'; }
+  if (n.w) el.style.flex = n.w + ' 1 0';
+  if (n.margin) el.style.margin = px(n.margin);
+  if (n.vis) updaters.push(() => { el.hidden = !evalExpr(n.vis); });
+  return el;
+}
+function render() {
+  updaters = [];
+  const host = document.getElementById('script');
+  host.replaceChildren(build(pageMap[current].root));
+  const alertEl = document.createElement('div'); alertEl.className = 'alert'; alertEl.setAttribute('role', 'status');
+  const span = document.createElement('span'), ok = document.createElement('button');
+  ok.type = 'button'; ok.textContent = 'OK'; ok.addEventListener('click', () => { alertText = ''; refresh(); });
+  alertEl.append(span, ok); host.appendChild(alertEl);
+  updaters.push(() => { alertEl.hidden = !alertText; span.textContent = alertText; });
+  document.getElementById('pageName').textContent = '/ ' + pageMap[current].name;
+  document.getElementById('pagejump').value = current;
+  refresh();
+}
+function refresh() {
+  for (const u of updaters) u();
+  const rows = DEF.variables.filter(v => v.output).map(v => {
+    const val = state[v.name];
+    return '<tr><td>' + v.name + '</td><td>' + (val === '' ? '&ndash;' : String(val)) + '</td></tr>';
+  });
+  document.getElementById('pd').innerHTML = rows.join('');
+  document.getElementById('log').innerHTML = (log.length ? log : ['Nothing yet']).map(l => '<li>' + l + '</li>').join('');
+}
+
+// ---- Page chrome ----------------------------------------------------------
+const jump = document.getElementById('pagejump');
+for (const p of DEF.pages) jump.appendChild(new Option(p.name, p.id));
+jump.addEventListener('change', () => { current = jump.value; alertText = ''; render(); });
+document.getElementById('simVerified').addEventListener('change', (e) => { state.in_VerifiedLevel = e.target.value; refresh(); });
+document.getElementById('simIntent').addEventListener('change', (e) => { state.in_IvrIntent = e.target.value; refresh(); });
+document.getElementById('reset').addEventListener('click', () => { resetState(); current = DEF.meta.startPage; render(); });
+setInterval(() => {
+  const s = Math.floor((Date.now() - started) / 1000);
+  builtins['Scripter.Customer Call Duration'] = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  const a = document.activeElement;
+  if (!(a && a.tagName === 'SELECT' && a.closest('.gs'))) refresh();
+}, 1000);
+resetState(); render();
+</script>
