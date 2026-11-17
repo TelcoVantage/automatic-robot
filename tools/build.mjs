@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import * as def from '../script/definition.mjs';
+import { toScriptFile } from './script-file.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { styles, variables, dataActions, customActions, pages, meta } = def;
@@ -44,6 +45,10 @@ if (problems.length) { console.error(problems.join('\n')); process.exit(1); }
 const template = readFileSync(join(root, 'preview/template.html'), 'utf8');
 const payload = JSON.stringify({ styles, variables, customActions, pages, meta }).replace(/</g, '\\u003c');
 writeFileSync(join(root, 'preview/index.html'), template.replace('/*__DEF__*/null', () => payload));
+
+// ----------------------------------------------------------- .script file ---
+const scriptFile = toScriptFile({ styles, variables, customActions, dataActions, pages, meta });
+writeFileSync(join(root, 'script/fraud-desk-inbound.script'), JSON.stringify(scriptFile));
 
 // ----------------------------------------------------------- build guide ---
 const code = (s) => '`' + String(s).replace(/`/g, "'") + '`';
@@ -161,11 +166,18 @@ add('## 2. Before you build', '',
   `| Wrap-up codes | ${meta.wrapUpCodes.map((c) => `**${c}**`).join(', ')}. Assign them to the fraud queue. |`,
   '| Agent permissions (phase 2) | Integrations > Action > View and Bridge > Actions > Execute, so agents can run data actions from the script. |',
   '| Market settings | Set the default value of each `cfg_` variable (section 4). The time frames are placeholders until Compliance confirms them. |', '',
-  '**Build order.** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.', '',
+  '**Import instead of building by hand.** `script/fraud-desk-inbound.script` contains everything in this guide: all pages, components, styles, variables and custom actions. In Admin > Contact Center > Scripts choose **Import**, select the file and name the script. Then finish the parts a file cannot carry, because they belong to your org:', '',
+  '1. Open `ca_TransferToSpecialist` and choose the queue in the Blind Transfer step.',
+  '2. Build the **Fraud - Alert Team Lead** data action (section 6), turn on the script\'s **Data Actions** property, then in `ca_AlertTeamLead` replace the placeholder alert with Execute Data Action followed by Set Variable `tl_Requested` = true. Until you do, the button tells the agent it is not connected.',
+  '3. Set the `cfg_` variable defaults for your market.',
+  '4. Check each page in preview against `preview/index.html`, then publish and point the Architect flow at the script.',
+  '5. Later, add the banking data actions where each custom action has a "Phase 2" comment.', '',
+  'The file was generated from the format of Genesys\'s own published script exports and the Scripter editor\'s property definitions, and it passes a structural check against both. It has not been imported into a live org, so if the import is rejected or a component looks wrong, the sections below let you fix or rebuild that part by hand.', '',
+  '**Build order (manual build).** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.', '',
   '**Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases. The team lead alert is the exception: it has no manual equivalent, so its data action is needed from day one.', '');
 
 add('## 3. Styles', '',
-  'Script Designer has no shared stylesheet, so these names are a convention. Set the listed properties on each component that uses the style. A **Chip** is a stack container with a background color and padding that holds a single Text component. Padding and margin are in pixels, written top right bottom left.', '',
+  'Script Designer has no shared stylesheet, so these names are a convention. Set the listed properties on each component that uses the style. A **Chip** is a Text component with a background color and padding, sized to its content (Width: Auto). Padding and margin are in pixels, written top right bottom left.', '',
   '| Style | Used on | Background | Text color | Font size | Bold | Padding | Margin | Width |', '|---|---|---|---|---|---|---|---|---|');
 for (const [name, s] of Object.entries(styles)) add(`| ${code(name)} | ${s.on} | ${s.bg || ''} | ${s.color || ''} | ${s.size || ''} | ${s.bold ? 'Yes' : ''} | ${s.pad || ''} | ${s.margin || ''} | ${s.width || ''} |`);
 add('', 'Palette: ink `#131A2B`, muted `#5B6478`, canvas `#F3F5F9`, accent `#2447D8`, good `#0E6B3A` on `#E3F5EA`, caution `#8A4B00` on `#FFF1D6`, critical `#A3221A` on `#FDE7E4`. All text and background pairs meet WCAG AA contrast.', '');
@@ -298,6 +310,7 @@ add('## 13. Confirm in your org', '',
   '- **Date input.** Bound here to a String variable.',
   '- **Output variable names.** Confirm how each Output variable is named in participant data on a test conversation before building reports on it.',
   '- **If/Else in custom actions.** Conditions here use the Dynamic Expression toggle.',
+  '- **Layout in the imported file.** Native stacks have no gap or wrap setting, so the file spaces row items with a 10 px right margin and stacks the side-panel chips vertically. Radio options are separate Radio Button components bound to the same variable.',
   '- **Team lead alert.** Agentless email needs an email domain set up for agentless sending, and agentless SMS needs a Genesys SMS number. Data actions cannot run in script preview, so test on a live call. An in-app chat message to a team lead room would be more visible, but the Collaborate Chat send-message API is reported not to work from data actions because they run without a user. Test that before relying on it. Confirm the Monitor, Coach and Barge permission names in your role editor.', '',
   'Documentation used: [Script components](https://help.genesys.cloud/articles/script-components/), [Available script actions](https://help.genesys.cloud/articles/available-script-actions/), [Dynamic script variables](https://help.genesys.cloud/articles/dynamic-script-variables/), [Define a custom script action](https://help.genesys.cloud/articles/define-custom-script-action/), [Built-in script variables](https://help.genesys.cloud/articles/built-in-script-variables/), [Scripting best practices](https://help.genesys.cloud/articles/scripting-best-practices-and-recommendations/), [Markdown component](https://help.genesys.cloud/articles/markdown-script-component/), [Set Screen Pop action](https://help.genesys.cloud/articles/set-screen-pop-action/).', '');
 

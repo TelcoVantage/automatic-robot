@@ -35,9 +35,9 @@ export const styles = {
   bannerWarn:  { on: 'container', bg: '#FFF1D6', color: '#8A4B00', size: 13, pad: '12', margin: '12 0 0 0' },
   bannerBad:   { on: 'container', bg: '#FDE7E4', color: '#A3221A', size: 13, pad: '12', margin: '12 0 0 0' },
   bannerInfo:  { on: 'container', bg: '#EDEFF4', color: '#3D4558', size: 13, pad: '12', margin: '12 0 0 0' },
-  chipOk:      { on: 'chip', bg: '#E3F5EA', color: '#0E6B3A', size: 12, bold: true, pad: '4 10' },
-  chipWarn:    { on: 'chip', bg: '#FFF1D6', color: '#8A4B00', size: 12, bold: true, pad: '4 10' },
-  chipBad:     { on: 'chip', bg: '#FDE7E4', color: '#A3221A', size: 12, bold: true, pad: '4 10' },
+  chipOk:      { on: 'chip', bg: '#E3F5EA', color: '#0E6B3A', size: 12, bold: true, pad: '4 10', margin: '2 0 2 0' },
+  chipWarn:    { on: 'chip', bg: '#FFF1D6', color: '#8A4B00', size: 12, bold: true, pad: '4 10', margin: '2 0 2 0' },
+  chipBad:     { on: 'chip', bg: '#FDE7E4', color: '#A3221A', size: 12, bold: true, pad: '4 10', margin: '2 0 2 0' },
   btnPrimary:  { on: 'button', bg: '#2447D8', color: '#FFFFFF', size: 14, bold: true },
   btnSecondary:{ on: 'button', bg: '#E6E9F0', color: '#131A2B', size: 14 },
   btnDanger:   { on: 'button', bg: '#B42318', color: '#FFFFFF', size: 14, bold: true },
@@ -153,7 +153,7 @@ export const dataActions = [
   { name: 'Fraud - Raise Payment Recall', inputs: 'customerId, amount', outputs: 'recallRef', purpose: 'Sends a recall request to the receiving bank.' },
   { name: 'Fraud - Lock Digital Access', inputs: 'customerId', outputs: 'status', purpose: 'Locks online and mobile banking and signs out all devices.' },
   { name: 'Fraud - Remove Wallet Tokens', inputs: 'customerId, cardLast4', outputs: 'status', purpose: 'Deletes the card from mobile wallets.' },
-  { name: 'Fraud - Alert Team Lead', inputs: 'agentName, queueName, conversationId, fraudType, reason', outputs: 'id', purpose: 'Sends the assistance alert to the team leads. Runs on the Genesys Cloud Data Actions integration, not a banking API. Needed from day one.' },
+  { name: 'Fraud - Alert Team Lead', inputs: 'agentName, queueName, conversationId, fraudType, reason', outputs: 'id', required: true, purpose: 'Sends the assistance alert to the team leads. Runs on the Genesys Cloud Data Actions integration, not a banking API. Needed from day one.' },
   { name: 'Fraud - Create Case', inputs: 'customerId, conversationId, fraudType, scamType, amount', outputs: 'caseRef', purpose: 'Creates the fraud case and returns its reference.' },
 ];
 
@@ -201,6 +201,12 @@ export const customActions = [
   { name: 'ca_AlertTeamLead', description: 'Sends a silent alert to the team leads. The call is not touched: no hold, no transfer, nothing the customer can hear.', steps: [
     data('Fraud - Alert Team Lead', { tl_Requested: true }),
   ] },
+  { name: 'ca_TransferToSpecialist', description: 'Records the outcome and transfers the call to the specialist queue.', steps: [
+    set('outcome', 'transferred'), ['transfer', 'Fraud Specialists'],
+  ] },
+  { name: 'ca_BackToVerify', description: 'Leaves the Not verified page and clears the failed outcome.', steps: [
+    set('outcome', ''), go('verify'),
+  ] },
   { name: 'ca_FailedVerification', description: 'Records that the caller could not be verified.', steps: [
     set('outcome', 'failed_idv'), go('unverified'),
   ] },
@@ -244,7 +250,7 @@ const header = () => h('header', [
 const side = () => v('side', [
   v('card', [
     text('h2', 'Case so far'),
-    h('row', [
+    v('row', [
       chip('chipOk', 'Verified', '{{dyn_IsVerified}}'),
       chip('chipWarn', 'Not verified', 'not {{dyn_IsVerified}}'),
       chip('chipOk', 'Card blocked', '{{act_CardBlocked}}'),
@@ -253,7 +259,7 @@ const side = () => v('side', [
       chip('chipBad', 'Recall needed', '{{dyn_UrgentRecall}}'),
       chip('chipOk', 'Banking locked', '{{act_DigitalLocked}}'),
       chip('chipWarn', 'Team lead alerted', '{{tl_Requested}}'),
-    ], { gap: true, wrap: true }),
+    ]),
     md('**Type**  {{dyn_TypeLabel}}\n**Amount reported**  {{cfg_Currency}}{{dyn_AmountAtRisk}}', { margin: '12 0 0 0' }),
     md('**Reference**  {{caseRef}}', { vis: '{{act_CaseCreated}}' }),
   ]),
@@ -311,6 +317,10 @@ export const notes = {
 const isCard = 'equal({{fraudType}}, "card")';
 const isScam = 'equal({{fraudType}}, "scam")';
 const isLost = 'equal({{fraudType}}, "lost")';
+
+customActions.push({ name: 'ca_CopyNotes', description: 'Copies the case notes for the chosen fraud type to the clipboard.', steps: [
+  ['if', isCard, [['copy', notes.card]], [['if', isScam, [['copy', notes.scam]], [['copy', notes.lost]]]]],
+] });
 
 export const pages = [
   // ------------------------------------------------------------ 1 Verify ---
@@ -512,6 +522,7 @@ export const pages = [
         actionRow('Order replacement card', 'Sent to the registered address. Available once the card is blocked.', 'act_ReplacementOrdered', 'Order card', 'ca_OrderReplacement', null, { dis: 'dyn_LockReplacement' }),
       ], { vis: '{{dyn_CardAtRisk}}' }),
       actionRow('Create fraud case', 'Logs the report for investigation and gives the customer a reference.', 'act_CaseCreated', 'Create case', 'ca_CreateCase', null),
+      field('Case reference', input('caseRef', 'From the case system'), 'Filled in automatically once the Create Case data action is connected. Until then, type the reference from the case system.'),
     ]),
     banner('bannerWarn', 'The card is still active. Block it before you continue.', '{{dyn_CardAtRisk}} and not {{act_CardBlocked}}'),
   ], [
@@ -540,14 +551,14 @@ export const pages = [
       md(notes.scam, { vis: isScam, box: true }),
       md(notes.lost, { vis: isLost, box: true }),
       h('row', [
-        button('btnSecondary', 'Copy notes', [['if', isCard, [['copy', notes.card]], [['if', isScam, [['copy', notes.scam]], [['copy', notes.lost]]]]]]),
+        button('btnSecondary', 'Copy notes', [run('ca_CopyNotes')]),
       ]),
       banner('bannerInfo', 'Wrap-up code to select: {{dyn_WrapUp}}'),
     ]),
     say('Is there anything else I can help you with today? Thank you for calling {{cfg_BankName}}.'),
   ], [
     button('btnSecondary', 'Back', [go('protect')]),
-    button('btnSecondary', 'Transfer to fraud specialist', [set('outcome', 'transferred'), ['transfer', 'Fraud Specialists']]),
+    button('btnSecondary', 'Transfer to fraud specialist', [run('ca_TransferToSpecialist')]),
     button('btnPrimary', 'Finish', [run('ca_Finish')]),
   ]),
 
@@ -561,7 +572,7 @@ export const pages = [
       banner('bannerInfo', 'Wrap-up code to select: Fraud - Verification failed'),
     ]),
   ], [
-    button('btnSecondary', 'Back to Verify', [set('outcome', ''), go('verify')]),
+    button('btnSecondary', 'Back to Verify', [run('ca_BackToVerify')]),
   ]),
 ];
 

@@ -58,13 +58,23 @@ Design rules the script follows:
 | Agent permissions (phase 2) | Integrations > Action > View and Bridge > Actions > Execute, so agents can run data actions from the script. |
 | Market settings | Set the default value of each `cfg_` variable (section 4). The time frames are placeholders until Compliance confirms them. |
 
-**Build order.** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.
+**Import instead of building by hand.** `script/fraud-desk-inbound.script` contains everything in this guide: all pages, components, styles, variables and custom actions. In Admin > Contact Center > Scripts choose **Import**, select the file and name the script. Then finish the parts a file cannot carry, because they belong to your org:
+
+1. Open `ca_TransferToSpecialist` and choose the queue in the Blind Transfer step.
+2. Build the **Fraud - Alert Team Lead** data action (section 6), turn on the script's **Data Actions** property, then in `ca_AlertTeamLead` replace the placeholder alert with Execute Data Action followed by Set Variable `tl_Requested` = true. Until you do, the button tells the agent it is not connected.
+3. Set the `cfg_` variable defaults for your market.
+4. Check each page in preview against `preview/index.html`, then publish and point the Architect flow at the script.
+5. Later, add the banking data actions where each custom action has a "Phase 2" comment.
+
+The file was generated from the format of Genesys's own published script exports and the Scripter editor's property definitions, and it passes a structural check against both. It has not been imported into a live org, so if the import is rejected or a component looks wrong, the sections below let you fix or rebuild that part by hand.
+
+**Build order (manual build).** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.
 
 **Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases. The team lead alert is the exception: it has no manual equivalent, so its data action is needed from day one.
 
 ## 3. Styles
 
-Script Designer has no shared stylesheet, so these names are a convention. Set the listed properties on each component that uses the style. A **Chip** is a stack container with a background color and padding that holds a single Text component. Padding and margin are in pixels, written top right bottom left.
+Script Designer has no shared stylesheet, so these names are a convention. Set the listed properties on each component that uses the style. A **Chip** is a Text component with a background color and padding, sized to its content (Width: Auto). Padding and margin are in pixels, written top right bottom left.
 
 | Style | Used on | Background | Text color | Font size | Bold | Padding | Margin | Width |
 |---|---|---|---|---|---|---|---|---|
@@ -94,9 +104,9 @@ Script Designer has no shared stylesheet, so these names are a convention. Set t
 | `bannerWarn` | container | #FFF1D6 | #8A4B00 | 13 |  | 12 | 12 0 0 0 |  |
 | `bannerBad` | container | #FDE7E4 | #A3221A | 13 |  | 12 | 12 0 0 0 |  |
 | `bannerInfo` | container | #EDEFF4 | #3D4558 | 13 |  | 12 | 12 0 0 0 |  |
-| `chipOk` | chip | #E3F5EA | #0E6B3A | 12 | Yes | 4 10 |  |  |
-| `chipWarn` | chip | #FFF1D6 | #8A4B00 | 12 | Yes | 4 10 |  |  |
-| `chipBad` | chip | #FDE7E4 | #A3221A | 12 | Yes | 4 10 |  |  |
+| `chipOk` | chip | #E3F5EA | #0E6B3A | 12 | Yes | 4 10 | 2 0 2 0 |  |
+| `chipWarn` | chip | #FFF1D6 | #8A4B00 | 12 | Yes | 4 10 | 2 0 2 0 |  |
+| `chipBad` | chip | #FDE7E4 | #A3221A | 12 | Yes | 4 10 | 2 0 2 0 |  |
 | `btnPrimary` | button | #2447D8 | #FFFFFF | 14 | Yes |  |  |  |
 | `btnSecondary` | button | #E6E9F0 | #131A2B | 14 |  |  |  |  |
 | `btnDanger` | button | #B42318 | #FFFFFF | 14 | Yes |  |  |  |
@@ -320,6 +330,20 @@ Sends a silent alert to the team leads. The call is not touched: no hold, no tra
 
 - Data Actions.Execute Data Action: *Fraud - Alert Team Lead*, then Scripter.Set Variable `tl_Requested` = true
 
+### ca_TransferToSpecialist
+
+Records the outcome and transfers the call to the specialist queue.
+
+- Scripter.Set Variable: `outcome` = "transferred"
+- Scripter.Blind Transfer: queue *Fraud Specialists*
+
+### ca_BackToVerify
+
+Leaves the Not verified page and clears the failed outcome.
+
+- Scripter.Set Variable: `outcome` = ""
+- Scripter.Change Page: *Verify*
+
 ### ca_FailedVerification
 
 Records that the caller could not be verified.
@@ -333,6 +357,18 @@ Marks the script complete.
 
 - Scripter.Set Variable: `outcome` = "completed"
 - Scripter.Alert: "Fraud report {{caseRef}} is complete. Select wrap-up code "{{dyn_WrapUp}}"."
+
+### ca_CopyNotes
+
+Copies the case notes for the chosen fraud type to the clipboard.
+
+- **If** `equal({{fraudType}}, "card")` (Dynamic Expression)
+  - Copy to Clipboard: the case notes text for this fraud type (see Case notes text)
+- **Else**
+  - **If** `equal({{fraudType}}, "scam")` (Dynamic Expression)
+    - Copy to Clipboard: the case notes text for this fraud type (see Case notes text)
+  - **Else**
+    - Copy to Clipboard: the case notes text for this fraud type (see Case notes text)
 
 For the six protective actions that run a data action, wrap the steps in **Try / On Error** in phase 2. In On Error add a Scripter.Alert telling the agent to complete the step in the banking system, and do not set the flag. For `ca_AlertTeamLead`, always use Try / On Error, with the alert text "Alert not sent. Message your team lead directly."
 
@@ -428,7 +464,7 @@ Five chips. Steps already passed use `stepDone`, the current step uses `stepNow`
 - **Vertical stack** `side`
   - **Vertical stack** `card`
     - **Text** `h2` "Case so far"
-    - **Horizontal stack** `row`
+    - **Vertical stack** `row`
       - **Chip** `chipOk` "Verified" · Visible: `{{dyn_IsVerified}}`
       - **Chip** `chipWarn` "Not verified" · Visible: `not {{dyn_IsVerified}}`
       - **Chip** `chipOk` "Card blocked" · Visible: `{{act_CardBlocked}}`
@@ -812,6 +848,10 @@ Stepper: step 4 is current.
       - **Text** `muted` "Logs the report for investigation and gives the customer a reference."
     - **Button** `btnPrimary` "Create case" · Click Action: Custom action `ca_CreateCase` · Visible: `not {{act_CaseCreated}}`
     - **Chip** `chipOk` "Done" · Visible: `{{act_CaseCreated}}`
+  - **Vertical stack** `field`
+    - **Text** `label` "Case reference"
+    - **Text input** · variable `caseRef` · placeholder "From the case system"
+    - **Text** `muted` "Filled in automatically once the Create Case data action is connected. Until then, type the reference from the case system."
 - **Vertical stack** `bannerWarn` · Visible: `{{dyn_CardAtRisk}} and not {{act_CardBlocked}}`
   - **Text** "The card is still active. Block it before you continue." · text color and size from `bannerWarn`
 
@@ -891,7 +931,7 @@ Stepper: step 5 is current.
     ```
 
   - **Horizontal stack** `row`
-    - **Button** `btnSecondary` "Copy notes" · Click Action: in order: if `equal({{fraudType}}, "card")` { Copy to Clipboard: the case notes text for this fraud type (see Case notes text) } else { if `equal({{fraudType}}, "scam")` { Copy to Clipboard: the case notes text for this fraud type (see Case notes text) } else { Copy to Clipboard: the case notes text for this fraud type (see Case notes text) } }
+    - **Button** `btnSecondary` "Copy notes" · Click Action: Custom action `ca_CopyNotes`
   - **Vertical stack** `bannerInfo`
     - **Text** "Wrap-up code to select: {{dyn_WrapUp}}" · text color and size from `bannerInfo`
 - **Vertical stack** `say`
@@ -901,7 +941,7 @@ Stepper: step 5 is current.
 **Footer**
 
 - **Button** `btnSecondary` "Back" · Click Action: Scripter.Change Page: *Protect*
-- **Button** `btnSecondary` "Transfer to fraud specialist" · Click Action: in order: Scripter.Set Variable: `outcome` = "transferred"; then Scripter.Blind Transfer: queue *Fraud Specialists*
+- **Button** `btnSecondary` "Transfer to fraud specialist" · Click Action: Custom action `ca_TransferToSpecialist`
 - **Button** `btnPrimary` "Finish" · Click Action: Custom action `ca_Finish`
 
 ### Page 8: Not verified
@@ -925,7 +965,7 @@ Stepper: step 1 is current.
 
 **Footer**
 
-- **Button** `btnSecondary` "Back to Verify" · Click Action: in order: Scripter.Set Variable: `outcome` = ""; then Scripter.Change Page: *Verify*
+- **Button** `btnSecondary` "Back to Verify" · Click Action: Custom action `ca_BackToVerify`
 
 ## 9. Case notes text
 
@@ -1038,6 +1078,7 @@ These points could not be confirmed from the Genesys Cloud Resource Center and m
 - **Date input.** Bound here to a String variable.
 - **Output variable names.** Confirm how each Output variable is named in participant data on a test conversation before building reports on it.
 - **If/Else in custom actions.** Conditions here use the Dynamic Expression toggle.
+- **Layout in the imported file.** Native stacks have no gap or wrap setting, so the file spaces row items with a 10 px right margin and stacks the side-panel chips vertically. Radio options are separate Radio Button components bound to the same variable.
 - **Team lead alert.** Agentless email needs an email domain set up for agentless sending, and agentless SMS needs a Genesys SMS number. Data actions cannot run in script preview, so test on a live call. An in-app chat message to a team lead room would be more visible, but the Collaborate Chat send-message API is reported not to work from data actions because they run without a user. Test that before relying on it. Confirm the Monitor, Coach and Barge permission names in your role editor.
 
 Documentation used: [Script components](https://help.genesys.cloud/articles/script-components/), [Available script actions](https://help.genesys.cloud/articles/available-script-actions/), [Dynamic script variables](https://help.genesys.cloud/articles/dynamic-script-variables/), [Define a custom script action](https://help.genesys.cloud/articles/define-custom-script-action/), [Built-in script variables](https://help.genesys.cloud/articles/built-in-script-variables/), [Scripting best practices](https://help.genesys.cloud/articles/scripting-best-practices-and-recommendations/), [Markdown component](https://help.genesys.cloud/articles/markdown-script-component/), [Set Screen Pop action](https://help.genesys.cloud/articles/set-screen-pop-action/).
