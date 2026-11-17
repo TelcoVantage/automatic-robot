@@ -52,13 +52,15 @@ Design rules the script follows:
 | Script | Admin > Contact Center > Scripts > Create. Name it **Fraud Desk - Inbound**. Start from a blank script. |
 | Script properties | Turn on **Inbound** (makes Secure Pause and End Secure Pause available). Turn on **Data Actions** when you reach phase 2. |
 | Queue | A queue named **Fraud Specialists** for the transfer button on Wrap-up. |
+| Team lead alert | Build the **Fraud - Alert Team Lead** data action (section 6) and decide which mailbox or phone receives alerts on each shift. |
+| Team lead permissions | Conversation > Call > Monitor, Coach and Barge, plus the queue activity view, so a lead can act on an alert. |
 | Wrap-up codes | **Fraud - Card**, **Fraud - Scam**, **Fraud - Lost or Stolen**, **Fraud - Other**, **Fraud - Verification failed**. Assign them to the fraud queue. |
 | Agent permissions (phase 2) | Integrations > Action > View and Bridge > Actions > Execute, so agents can run data actions from the script. |
 | Market settings | Set the default value of each `cfg_` variable (section 4). The time frames are placeholders until Compliance confirms them. |
 
 **Build order.** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.
 
-**Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases.
+**Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases. The team lead alert is the exception: it has no manual equivalent, so its data action is needed from day one.
 
 ## 3. Styles
 
@@ -98,6 +100,7 @@ Script Designer has no shared stylesheet, so these names are a convention. Set t
 | `btnPrimary` | button | #2447D8 | #FFFFFF | 14 | Yes |  |  |  |
 | `btnSecondary` | button | #E6E9F0 | #131A2B | 14 |  |  |  |  |
 | `btnDanger` | button | #B42318 | #FFFFFF | 14 | Yes |  |  |  |
+| `btnAssist` | button | #101B3B | #FFFFFF | 14 | Yes |  | 12 0 0 0 |  |
 | `footer` | container |  |  |  |  | 0 20 20 20 |  |  |
 
 Palette: ink `#131A2B`, muted `#5B6478`, canvas `#F3F5F9`, accent `#2447D8`, good `#0E6B3A` on `#E3F5EA`, caution `#8A4B00` on `#FFF1D6`, critical `#A3221A` on `#FDE7E4`. All text and background pairs meet WCAG AA contrast.
@@ -200,6 +203,13 @@ Palette: ink `#131A2B`, muted `#5B6478`, canvas `#F3F5F9`, accent `#2447D8`, goo
 | `act_CaseCreated` | True/False | false |  |  | Fraud case created. |
 | `caseRef` | String | (empty) |  | Yes | Fraud case reference. Saved as participant data. |
 | `out_AmountAtRisk` | Number | 0 |  | Yes | Copy of dyn_AmountAtRisk, saved as participant data when the case is created. |
+
+### Assistance
+
+| Name | Type | Default | Input | Output | Description |
+|---|---|---|---|---|---|
+| `tl_Requested` | True/False | false |  | Yes | Agent alerted a team lead during the interaction. Saved as participant data. |
+| `tl_Reason` | String | (empty) |  |  | Optional reason sent with the alert. |
 
 ### Wrap-up
 
@@ -304,6 +314,12 @@ Creates the fraud case and stores the reference and amount for reporting.
 - Scripter.Set Variable: `out_AmountAtRisk` = `{{dyn_AmountAtRisk}}` (expression)
 - Data Actions.Execute Data Action: *Fraud - Create Case*, then Scripter.Set Variable `caseRef` = the returned value, `act_CaseCreated` = true
 
+### ca_AlertTeamLead
+
+Sends a silent alert to the team leads. The call is not touched: no hold, no transfer, nothing the customer can hear.
+
+- Data Actions.Execute Data Action: *Fraud - Alert Team Lead*, then Scripter.Set Variable `tl_Requested` = true
+
 ### ca_FailedVerification
 
 Records that the caller could not be verified.
@@ -318,7 +334,7 @@ Marks the script complete.
 - Scripter.Set Variable: `outcome` = "completed"
 - Scripter.Alert: "Fraud report {{caseRef}} is complete. Select wrap-up code "{{dyn_WrapUp}}"."
 
-For the six actions that run a data action, wrap the steps in **Try / On Error** in phase 2. In On Error add a Scripter.Alert telling the agent to complete the step in the banking system, and do not set the flag.
+For the six protective actions that run a data action, wrap the steps in **Try / On Error** in phase 2. In On Error add a Scripter.Alert telling the agent to complete the step in the banking system, and do not set the flag. For `ca_AlertTeamLead`, always use Try / On Error, with the alert text "Alert not sent. Message your team lead directly."
 
 ## 6. Data actions
 
@@ -331,9 +347,46 @@ Build these in Admin > Integrations > Actions against your banking APIs (Web Ser
 | Fraud - Raise Payment Recall | customerId, amount | recallRef | Sends a recall request to the receiving bank. |
 | Fraud - Lock Digital Access | customerId | status | Locks online and mobile banking and signs out all devices. |
 | Fraud - Remove Wallet Tokens | customerId, cardLast4 | status | Deletes the card from mobile wallets. |
+| Fraud - Alert Team Lead | agentName, queueName, conversationId, fraudType, reason | id | Sends the assistance alert to the team leads. Runs on the Genesys Cloud Data Actions integration, not a banking API. Needed from day one. |
 | Fraud - Create Case | customerId, conversationId, fraudType, scamType, amount | caseRef | Creates the fraud case and returns its reference. |
 
 Map `customerId` to `in_CustomerId`, `cardLast4` to `in_CardLast4`, `conversationId` to `{{Scripter.Interaction Id}}`, `fraudType` to `fraudType`, `scamType` to `scam_Type` and `amount` to `out_AmountAtRisk`.
+
+### Team lead alert
+
+`Fraud - Alert Team Lead` is built on the **Genesys Cloud Data Actions** integration (Admin > Integrations), which calls the Genesys Cloud API itself using an OAuth client-credentials client. Nothing outside Genesys Cloud is involved. The call is not touched: no hold, no transfer, nothing the customer can hear.
+
+Pick one channel for the alert:
+
+| Channel | API call | Needs | Notes |
+|---|---|---|---|
+| Email to the team lead mailbox | `POST /api/v2/conversations/emails/agentless` | An email domain enabled for agentless sending | Send to one shared mailbox or distribution list. |
+| SMS to the duty lead | `POST /api/v2/conversations/messages/agentless` | An SMS number in Genesys Cloud | Easiest to notice away from the desk. |
+
+Request body starting points. Check the field names in API Explorer before publishing the data action.
+
+```json
+{
+  "senderType": "Outbound",
+  "fromAddress": { "email": "fraud-alerts@YOUR-GENESYS-EMAIL-DOMAIN", "name": "Fraud Desk" },
+  "toAddresses": [ { "email": "fraud-team-leads@YOUR-BANK" } ],
+  "subject": "Assistance needed: ${input.agentName}",
+  "textBody": "${input.agentName} on ${input.queueName} has asked for a team lead. Reason: ${input.reason}. Fraud type: ${input.fraudType}. Conversation: ${input.conversationId}"
+}
+```
+
+```json
+{
+  "fromAddress": "+YOUR-GENESYS-SMS-NUMBER",
+  "toAddress": "+DUTY-LEAD-MOBILE",
+  "toAddressMessengerType": "sms",
+  "textBody": "${input.agentName} on ${input.queueName} needs a team lead. Reason: ${input.reason}. Conversation: ${input.conversationId}"
+}
+```
+
+Map `agentName` to `{{Scripter.Agent Name}}`, `queueName` to `{{Scripter.Queue Name}}`, `conversationId` to `{{Scripter.Interaction Id}}`, `fraudType` to `{{dyn_TypeLabel}}` and `reason` to `tl_Reason`. The alert carries no customer details.
+
+**What the team lead does.** Opens the queue activity view for the fraud queue, finds the agent's call and chooses Monitor (listen silently), Coach (speak to the agent only) or Barge (join the call), or walks over. `tl_Requested` is saved as participant data so you can report on how often and on which fraud types agents ask for help.
 
 ## 7. Page frame
 
@@ -383,6 +436,7 @@ Five chips. Steps already passed use `stepDone`, the current step uses `stepNow`
       - **Chip** `chipOk` "Recall raised" · Visible: `{{act_RecallRaised}}`
       - **Chip** `chipBad` "Recall needed" · Visible: `{{dyn_UrgentRecall}}`
       - **Chip** `chipOk` "Banking locked" · Visible: `{{act_DigitalLocked}}`
+      - **Chip** `chipWarn` "Team lead alerted" · Visible: `{{tl_Requested}}`
     - **Markdown** · Margin: 12 0 0 0
 
       ```
@@ -396,6 +450,16 @@ Five chips. Steps already passed use `stepDone`, the current step uses `stepNow`
       **Reference**  {{caseRef}}
       ```
 
+  - **Vertical stack** `card`
+    - **Text** `h2` "Need a team lead?"
+    - **Text** `muted` "Sends a silent alert with your name and this call. The customer stays on the line and hears nothing."
+    - **Vertical stack** `field`
+      - **Text** `label` "Reason (optional)"
+      - **Dropdown** · variable `tl_Reason` · options "Customer distressed or abusive" = `Customer distressed or abusive`, "High value or complex case" = `High value or complex case`, "Caller may not be the customer" = `Caller may not be the customer`, "Need a decision or approval" = `Need a decision or approval`, "Something else" = `Other`
+    - **Button** `btnAssist` "Alert team lead" · Click Action: Custom action `ca_AlertTeamLead` · Visible: `not {{tl_Requested}}`
+    - **Vertical stack** `bannerOk` · Visible: `{{tl_Requested}}`
+      - **Text** "Team lead alerted. Carry on with the call. They will listen in, join the call or come over to you." · text color and size from `bannerOk`
+      - **Button** `btnSecondary` "Alert again" · Click Action: Custom action `ca_AlertTeamLead` · Margin: 8 0 0 0
   - **Vertical stack** `card`
     - **Text** `h2` "Never ask for"
     - **Markdown**
@@ -925,6 +989,7 @@ Card blocked: {{act_CardBlocked}} | Replacement ordered: {{act_ReplacementOrdere
 | `act_RecallRaised` | Payment recall raised. Saved as participant data. |
 | `caseRef` | Fraud case reference. Saved as participant data. |
 | `out_AmountAtRisk` | Copy of dyn_AmountAtRisk, saved as participant data when the case is created. |
+| `tl_Requested` | Agent alerted a team lead during the interaction. Saved as participant data. |
 | `outcome` | completed, failed_idv or transferred. Saved as participant data. |
 
 ## 11. Compliance and data handling
@@ -957,6 +1022,9 @@ Use script preview for navigation and visibility, then a test call for data acti
 | 13 | Create case | Reference appears in the side panel and Wrap-up wording; `caseRef` and `out_AmountAtRisk` saved |
 | 14 | Wrap-up for each type | Correct next-steps wording, notes and wrap-up code |
 | 15 | Data action failure (phase 2) | Alert shown, flag not set, agent can retry |
+| 16 | Click Alert team lead on a live call | Call carries on with no hold or tone; alert arrives with agent name, queue, reason and conversation ID; `tl_Requested` = true; Team lead alerted chip and green banner show; button becomes Alert again |
+| 17 | Team lead acts on the alert | Finds the agent's call in the queue activity view and can monitor, coach or barge |
+| 18 | Alert data action fails | Agent sees "Alert not sent"; flag not set; chip not shown |
 
 ## 13. Confirm in your org
 
@@ -970,5 +1038,6 @@ These points could not be confirmed from the Genesys Cloud Resource Center and m
 - **Date input.** Bound here to a String variable.
 - **Output variable names.** Confirm how each Output variable is named in participant data on a test conversation before building reports on it.
 - **If/Else in custom actions.** Conditions here use the Dynamic Expression toggle.
+- **Team lead alert.** Agentless email needs an email domain set up for agentless sending, and agentless SMS needs a Genesys SMS number. Data actions cannot run in script preview, so test on a live call. An in-app chat message to a team lead room would be more visible, but the Collaborate Chat send-message API is reported not to work from data actions because they run without a user. Test that before relying on it. Confirm the Monitor, Coach and Barge permission names in your role editor.
 
 Documentation used: [Script components](https://help.genesys.cloud/articles/script-components/), [Available script actions](https://help.genesys.cloud/articles/available-script-actions/), [Dynamic script variables](https://help.genesys.cloud/articles/dynamic-script-variables/), [Define a custom script action](https://help.genesys.cloud/articles/define-custom-script-action/), [Built-in script variables](https://help.genesys.cloud/articles/built-in-script-variables/), [Scripting best practices](https://help.genesys.cloud/articles/scripting-best-practices-and-recommendations/), [Markdown component](https://help.genesys.cloud/articles/markdown-script-component/), [Set Screen Pop action](https://help.genesys.cloud/articles/set-screen-pop-action/).

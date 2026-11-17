@@ -156,11 +156,13 @@ add('## 2. Before you build', '',
   `| Script | Admin > Contact Center > Scripts > Create. Name it **${meta.name}**. Start from a blank script. |`,
   '| Script properties | Turn on **Inbound** (makes Secure Pause and End Secure Pause available). Turn on **Data Actions** when you reach phase 2. |',
   `| Queue | A queue named **${meta.transferQueue}** for the transfer button on Wrap-up. |`,
+  '| Team lead alert | Build the **Fraud - Alert Team Lead** data action (section 6) and decide which mailbox or phone receives alerts on each shift. |',
+  '| Team lead permissions | Conversation > Call > Monitor, Coach and Barge, plus the queue activity view, so a lead can act on an alert. |',
   `| Wrap-up codes | ${meta.wrapUpCodes.map((c) => `**${c}**`).join(', ')}. Assign them to the fraud queue. |`,
   '| Agent permissions (phase 2) | Integrations > Action > View and Bridge > Actions > Execute, so agents can run data actions from the script. |',
   '| Market settings | Set the default value of each `cfg_` variable (section 4). The time frames are placeholders until Compliance confirms them. |', '',
   '**Build order.** Variables first, then custom actions, then the page frame on page 1. Copy the frame containers and paste them into each new page (toolbar Cut, Copy, Paste), then add the page content. Publish, then point the Architect flow at the script.', '',
-  '**Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases.', '');
+  '**Phase 1 and phase 2.** In phase 1 the six protective custom actions only set their flag: the agent does the step in the banking system and clicks the button to record it. In phase 2 each custom action runs its data action first. Pages and wording do not change between phases. The team lead alert is the exception: it has no manual equivalent, so its data action is needed from day one.', '');
 
 add('## 3. Styles', '',
   'Script Designer has no shared stylesheet, so these names are a convention. Set the listed properties on each component that uses the style. A **Chip** is a stack container with a background color and padding that holds a single Text component. Padding and margin are in pixels, written top right bottom left.', '',
@@ -182,13 +184,35 @@ add('', 'Text comparisons use `equal()`, which Genesys provides for strict match
 
 add('## 5. Custom actions', '');
 for (const a of customActions) add(`### ${a.name}`, '', a.description, '', ...stepLines(a.steps), '');
-add('For the six actions that run a data action, wrap the steps in **Try / On Error** in phase 2. In On Error add a Scripter.Alert telling the agent to complete the step in the banking system, and do not set the flag.', '');
+add('For the six protective actions that run a data action, wrap the steps in **Try / On Error** in phase 2. In On Error add a Scripter.Alert telling the agent to complete the step in the banking system, and do not set the flag. For `ca_AlertTeamLead`, always use Try / On Error, with the alert text "Alert not sent. Message your team lead directly."', '');
 
 add('## 6. Data actions', '',
   'Build these in Admin > Integrations > Actions against your banking APIs (Web Services Data Actions integration). Write-back actions need POST endpoints. Data actions cannot run in script preview, so test them on a real interaction.', '',
   '| Data action | Inputs | Outputs | Purpose |', '|---|---|---|---|');
 for (const d of dataActions) add(`| ${d.name} | ${d.inputs} | ${d.outputs} | ${d.purpose} |`);
 add('', 'Map `customerId` to `in_CustomerId`, `cardLast4` to `in_CardLast4`, `conversationId` to `{{Scripter.Interaction Id}}`, `fraudType` to `fraudType`, `scamType` to `scam_Type` and `amount` to `out_AmountAtRisk`.', '');
+add('### Team lead alert', '',
+  '`Fraud - Alert Team Lead` is built on the **Genesys Cloud Data Actions** integration (Admin > Integrations), which calls the Genesys Cloud API itself using an OAuth client-credentials client. Nothing outside Genesys Cloud is involved. The call is not touched: no hold, no transfer, nothing the customer can hear.', '',
+  'Pick one channel for the alert:', '',
+  '| Channel | API call | Needs | Notes |', '|---|---|---|---|',
+  '| Email to the team lead mailbox | `POST /api/v2/conversations/emails/agentless` | An email domain enabled for agentless sending | Send to one shared mailbox or distribution list. |',
+  '| SMS to the duty lead | `POST /api/v2/conversations/messages/agentless` | An SMS number in Genesys Cloud | Easiest to notice away from the desk. |', '',
+  'Request body starting points. Check the field names in API Explorer before publishing the data action.', '',
+  '```json', '{',
+  '  "senderType": "Outbound",',
+  '  "fromAddress": { "email": "fraud-alerts@YOUR-GENESYS-EMAIL-DOMAIN", "name": "Fraud Desk" },',
+  '  "toAddresses": [ { "email": "fraud-team-leads@YOUR-BANK" } ],',
+  '  "subject": "Assistance needed: ${input.agentName}",',
+  '  "textBody": "${input.agentName} on ${input.queueName} has asked for a team lead. Reason: ${input.reason}. Fraud type: ${input.fraudType}. Conversation: ${input.conversationId}"',
+  '}', '```', '',
+  '```json', '{',
+  '  "fromAddress": "+YOUR-GENESYS-SMS-NUMBER",',
+  '  "toAddress": "+DUTY-LEAD-MOBILE",',
+  '  "toAddressMessengerType": "sms",',
+  '  "textBody": "${input.agentName} on ${input.queueName} needs a team lead. Reason: ${input.reason}. Conversation: ${input.conversationId}"',
+  '}', '```', '',
+  'Map `agentName` to `{{Scripter.Agent Name}}`, `queueName` to `{{Scripter.Queue Name}}`, `conversationId` to `{{Scripter.Interaction Id}}`, `fraudType` to `{{dyn_TypeLabel}}` and `reason` to `tl_Reason`. The alert carries no customer details.', '',
+  '**What the team lead does.** Opens the queue activity view for the fraud queue, finds the agent\'s call and chooses Monitor (listen silently), Coach (speak to the agent only) or Barge (join the call), or walks over. `tl_Requested` is saved as participant data so you can report on how often and on which fraud types agents ask for help.', '');
 
 add('## 7. Page frame', '',
   'Every page has the same root structure. Only the highlighted step and the content of `main` and `footer` change.', '',
@@ -259,7 +283,10 @@ add('## 12. Test plan', '',
   '| 12 | Protect without creating a case | Continue to Wrap-up disabled |',
   '| 13 | Create case | Reference appears in the side panel and Wrap-up wording; `caseRef` and `out_AmountAtRisk` saved |',
   '| 14 | Wrap-up for each type | Correct next-steps wording, notes and wrap-up code |',
-  '| 15 | Data action failure (phase 2) | Alert shown, flag not set, agent can retry |', '');
+  '| 15 | Data action failure (phase 2) | Alert shown, flag not set, agent can retry |',
+  '| 16 | Click Alert team lead on a live call | Call carries on with no hold or tone; alert arrives with agent name, queue, reason and conversation ID; `tl_Requested` = true; Team lead alerted chip and green banner show; button becomes Alert again |',
+  '| 17 | Team lead acts on the alert | Finds the agent\'s call in the queue activity view and can monitor, coach or barge |',
+  '| 18 | Alert data action fails | Agent sees "Alert not sent"; flag not set; chip not shown |', '');
 
 add('## 13. Confirm in your org', '',
   'These points could not be confirmed from the Genesys Cloud Resource Center and may differ by release. Check each one while building.', '',
@@ -270,7 +297,8 @@ add('## 13. Confirm in your org', '',
   '- **Number variables hold whole numbers.** Amounts are captured in whole currency units.',
   '- **Date input.** Bound here to a String variable.',
   '- **Output variable names.** Confirm how each Output variable is named in participant data on a test conversation before building reports on it.',
-  '- **If/Else in custom actions.** Conditions here use the Dynamic Expression toggle.', '',
+  '- **If/Else in custom actions.** Conditions here use the Dynamic Expression toggle.',
+  '- **Team lead alert.** Agentless email needs an email domain set up for agentless sending, and agentless SMS needs a Genesys SMS number. Data actions cannot run in script preview, so test on a live call. An in-app chat message to a team lead room would be more visible, but the Collaborate Chat send-message API is reported not to work from data actions because they run without a user. Test that before relying on it. Confirm the Monitor, Coach and Barge permission names in your role editor.', '',
   'Documentation used: [Script components](https://help.genesys.cloud/articles/script-components/), [Available script actions](https://help.genesys.cloud/articles/available-script-actions/), [Dynamic script variables](https://help.genesys.cloud/articles/dynamic-script-variables/), [Define a custom script action](https://help.genesys.cloud/articles/define-custom-script-action/), [Built-in script variables](https://help.genesys.cloud/articles/built-in-script-variables/), [Scripting best practices](https://help.genesys.cloud/articles/scripting-best-practices-and-recommendations/), [Markdown component](https://help.genesys.cloud/articles/markdown-script-component/), [Set Screen Pop action](https://help.genesys.cloud/articles/set-screen-pop-action/).', '');
 
 writeFileSync(join(root, 'docs/BUILD_GUIDE.md'), L.join('\n'));

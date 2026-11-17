@@ -41,6 +41,7 @@ export const styles = {
   btnPrimary:  { on: 'button', bg: '#2447D8', color: '#FFFFFF', size: 14, bold: true },
   btnSecondary:{ on: 'button', bg: '#E6E9F0', color: '#131A2B', size: 14 },
   btnDanger:   { on: 'button', bg: '#B42318', color: '#FFFFFF', size: 14, bold: true },
+  btnAssist:   { on: 'button', bg: '#101B3B', color: '#FFFFFF', size: 14, bold: true, margin: '12 0 0 0' },
   footer:      { on: 'container', pad: '0 20 20 20' },
 };
 
@@ -122,6 +123,8 @@ export const variables = [
   basic('act_CaseCreated', B, false, 'Fraud case created.', { group: 'Protect' }),
   basic('caseRef', S, '', 'Fraud case reference. Saved as participant data.', { group: 'Protect', output: true }),
   basic('out_AmountAtRisk', N, 0, 'Copy of dyn_AmountAtRisk, saved as participant data when the case is created.', { group: 'Protect', output: true }),
+  basic('tl_Requested', B, false, 'Agent alerted a team lead during the interaction. Saved as participant data.', { group: 'Assistance', output: true }),
+  basic('tl_Reason', S, '', 'Optional reason sent with the alert.', { group: 'Assistance' }),
   basic('adviceGiven', B, false, 'Safety advice read to the customer.', { group: 'Wrap-up' }),
   basic('outcome', S, '', 'completed, failed_idv or transferred. Saved as participant data.', { group: 'Wrap-up', output: true }),
 
@@ -150,6 +153,7 @@ export const dataActions = [
   { name: 'Fraud - Raise Payment Recall', inputs: 'customerId, amount', outputs: 'recallRef', purpose: 'Sends a recall request to the receiving bank.' },
   { name: 'Fraud - Lock Digital Access', inputs: 'customerId', outputs: 'status', purpose: 'Locks online and mobile banking and signs out all devices.' },
   { name: 'Fraud - Remove Wallet Tokens', inputs: 'customerId, cardLast4', outputs: 'status', purpose: 'Deletes the card from mobile wallets.' },
+  { name: 'Fraud - Alert Team Lead', inputs: 'agentName, queueName, conversationId, fraudType, reason', outputs: 'id', purpose: 'Sends the assistance alert to the team leads. Runs on the Genesys Cloud Data Actions integration, not a banking API. Needed from day one.' },
   { name: 'Fraud - Create Case', inputs: 'customerId, conversationId, fraudType, scamType, amount', outputs: 'caseRef', purpose: 'Creates the fraud case and returns its reference.' },
 ];
 
@@ -193,6 +197,9 @@ export const customActions = [
   { name: 'ca_CreateCase', description: 'Creates the fraud case and stores the reference and amount for reporting.', steps: [
     set('out_AmountAtRisk', { x: '{{dyn_AmountAtRisk}}' }),
     data('Fraud - Create Case', { caseRef: 'FR-000417', act_CaseCreated: true }),
+  ] },
+  { name: 'ca_AlertTeamLead', description: 'Sends a silent alert to the team leads. The call is not touched: no hold, no transfer, nothing the customer can hear.', steps: [
+    data('Fraud - Alert Team Lead', { tl_Requested: true }),
   ] },
   { name: 'ca_FailedVerification', description: 'Records that the caller could not be verified.', steps: [
     set('outcome', 'failed_idv'), go('unverified'),
@@ -245,9 +252,25 @@ const side = () => v('side', [
       chip('chipOk', 'Recall raised', '{{act_RecallRaised}}'),
       chip('chipBad', 'Recall needed', '{{dyn_UrgentRecall}}'),
       chip('chipOk', 'Banking locked', '{{act_DigitalLocked}}'),
+      chip('chipWarn', 'Team lead alerted', '{{tl_Requested}}'),
     ], { gap: true, wrap: true }),
     md('**Type**  {{dyn_TypeLabel}}\n**Amount reported**  {{cfg_Currency}}{{dyn_AmountAtRisk}}', { margin: '12 0 0 0' }),
     md('**Reference**  {{caseRef}}', { vis: '{{act_CaseCreated}}' }),
+  ]),
+  v('card', [
+    text('h2', 'Need a team lead?'),
+    text('muted', 'Sends a silent alert with your name and this call. The customer stays on the line and hears nothing.'),
+    field('Reason (optional)', dropdown('tl_Reason', [
+      ['Customer distressed or abusive', 'Customer distressed or abusive'],
+      ['High value or complex case', 'High value or complex case'],
+      ['Caller may not be the customer', 'Caller may not be the customer'],
+      ['Need a decision or approval', 'Need a decision or approval'],
+      ['Other', 'Something else'],
+    ])),
+    button('btnAssist', 'Alert team lead', [run('ca_AlertTeamLead')], { vis: 'not {{tl_Requested}}' }),
+    banner('bannerOk', 'Team lead alerted. Carry on with the call. They will listen in, join the call or come over to you.', '{{tl_Requested}}', [
+      button('btnSecondary', 'Alert again', [run('ca_AlertTeamLead')], { margin: '8 0 0 0' }),
+    ]),
   ]),
   v('card', [
     text('h2', 'Never ask for'),
