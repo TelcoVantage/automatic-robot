@@ -1,0 +1,72 @@
+{
+  "name": "Fraud - Alert Team Lead",
+  "integrationType": "purecloud-data-actions",
+  "actionType": "custom",
+  "config": {
+    "request": {
+      "requestUrlTemplate": "/api/v2/conversations/emails/agentless",
+      "requestType": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "requestTemplate": "{\n  \"senderType\": \"Outbound\",\n  \"fromAddress\": {\n    \"email\": \"fraud-alerts@YOUR-AGENTLESS-DOMAIN\",\n    \"name\": \"Fraud Desk\"\n  },\n  \"toAddresses\": [\n    {\n      \"email\": \"fraud-team-leads@YOUR-BANK\"\n    }\n  ],\n  \"subject\": \"Assistance needed: ${input.agentName}\",\n  \"textBody\": \"${input.agentName} on $!{input.queueName} has asked for a team lead. Reason: $!{input.reason}. Fraud type: $!{input.fraudType}. Conversation: ${input.conversationId}\"\n}"
+    },
+    "response": {
+      "translationMap": {
+        "id": "$.id"
+      },
+      "translationMapDefaults": {
+        "id": "\"\""
+      },
+      "successTemplate": "{\"id\": ${id}}"
+    }
+  },
+  "contract": {
+    "input": {
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "type": "object",
+        "required": [
+          "agentName",
+          "conversationId"
+        ],
+        "properties": {
+          "agentName": {
+            "description": "Agent asking for help. Map to Scripter.Agent Name.",
+            "type": "string"
+          },
+          "queueName": {
+            "description": "Queue the call is on. Map to Scripter.Queue Name.",
+            "type": "string"
+          },
+          "conversationId": {
+            "description": "Map to Scripter.Interaction Id.",
+            "type": "string"
+          },
+          "fraudType": {
+            "description": "Map to dyn_TypeLabel.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Optional. Map to tl_Reason.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "output": {
+      "successSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "ID of the alert email that was sent.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "secure": false
+}

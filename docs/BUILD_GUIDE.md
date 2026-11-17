@@ -392,6 +392,8 @@ Map `customerId` to `in_CustomerId`, `cardLast4` to `in_CardLast4`, `conversatio
 
 `Fraud - Alert Team Lead` is built on the **Genesys Cloud Data Actions** integration (Admin > Integrations), which calls the Genesys Cloud API itself using an OAuth client-credentials client. Nothing outside Genesys Cloud is involved. The call is not touched: no hold, no transfer, nothing the customer can hear.
 
+A ready-made export of the email version is in `data-actions/Fraud-Alert-Team-Lead.custom.json`. In Admin > Integrations > Actions choose **Import**, select the file and pick your Genesys Cloud Data Actions integration. Then edit the two placeholder addresses in the request body (`fraud-alerts@YOUR-AGENTLESS-DOMAIN` and `fraud-team-leads@YOUR-BANK`), run it from the Test tab, and publish it.
+
 Pick one channel for the alert:
 
 | Channel | API call | Needs | Notes |
